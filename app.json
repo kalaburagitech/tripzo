@@ -33,6 +33,17 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "a0b542f5-60e3-4e00-a6b8-7a6c9b568a80"
+      }
+    },
+    "owner": "kalaburagitech"
   }
 }
