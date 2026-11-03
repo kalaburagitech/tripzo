@@ -1,34 +1,108 @@
 import { Bus, BusFilters, SortOption } from '../types';
 import { DUMMY_BUSES } from '../data/dummyData';
+import { convexClient, api } from './convexClient';
 
 export const busService = {
   async getBuses(
     fromCity: string,
     toCity: string,
     filters?: Partial<BusFilters>,
-    sortBy?: SortOption
+    sortBy?: SortOption,
+    travelDate?: string
   ): Promise<Bus[]> {
-    // Artificial small delay for realistic loading skeleton feel
-    await new Promise((res) => setTimeout(res, 350));
+    let list: Bus[] = [];
 
-    // Find direct route or fallback to popular buses matching route
-    let list = DUMMY_BUSES.filter(
-      (b) =>
-        b.departureCity.toLowerCase() === fromCity.toLowerCase() &&
-        b.arrivalCity.toLowerCase() === toCity.toLowerCase()
-    );
+    // 1. Query live Convex marketplace backend
+    try {
+      const trips = await convexClient.query(api.buses.searchTrips, {
+        fromCity,
+        toCity,
+        journeyDate: travelDate,
+      });
 
-    // If no exact match for this pair, adapt available buses to this route for demo completeness
-    if (list.length === 0) {
-      list = DUMMY_BUSES.slice(0, 12).map((b, idx) => ({
-        ...b,
-        id: `adapted-${b.id}-${idx}`,
-        departureCity: fromCity,
-        arrivalCity: toCity,
-      }));
+      if (trips && trips.length > 0) {
+        list = trips.map((t: any) => ({
+          id: String(t.id),
+          operatorName: t.operatorName,
+          busType: t.busType,
+          category: t.busType.toLowerCase().includes('sleeper')
+            ? ('sleeper' as const)
+            : ('seater' as const),
+          isAC: t.busType.toLowerCase().includes('ac') || t.busType.toLowerCase().includes('volvo'),
+          departureCity: t.fromCity,
+          arrivalCity: t.toCity,
+          departureTime: t.departureTime,
+          arrivalTime: t.arrivalTime,
+          duration: t.duration,
+          nextDayArrival: true,
+          price: t.price,
+          originalPrice: t.originalPrice,
+          rating: t.rating || 4.6,
+          ratingCount: t.reviewCount || 240,
+          availableSeats: t.availableSeats,
+          totalSeats: t.totalSeats,
+          amenities: (t.amenities || ['WiFi', 'Charging Port', 'Blanket']).map((name: string, i: number) => ({
+            id: `am_${i}`,
+            name,
+            icon: name.toLowerCase().includes('wifi') ? 'wifi' : 'power-plug',
+          })),
+          boardingPoints: (t.boardingPoints || []).map((bp: any, i: number) => ({
+            id: `bp_${i}`,
+            name: bp.name,
+            address: bp.landmark || bp.name,
+            landmark: bp.landmark,
+            time: bp.time,
+          })),
+          droppingPoints: (t.droppingPoints || []).map((dp: any, i: number) => ({
+            id: `dp_${i}`,
+            name: dp.name,
+            address: dp.landmark || dp.name,
+            landmark: dp.landmark,
+            time: dp.time,
+          })),
+          cancellationPolicy: [
+            { beforeTime: 'Up to 24h before', refundPercent: 90 },
+            { beforeTime: '12h to 24h before', refundPercent: 50 },
+            { beforeTime: '0h to 12h before', refundPercent: 0 },
+          ],
+          reviews: [
+            {
+              id: 'r1',
+              author: 'Rahul S.',
+              rating: 5,
+              date: 'Yesterday',
+              comment: 'Super clean sleeper bus, smooth driving and on-time pickup.',
+            },
+          ],
+          photos: t.images || [
+            'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=800',
+            'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=800',
+          ],
+        }));
+      }
+    } catch (err) {
+      console.warn('Convex searchTrips failed, falling back to local dataset:', err);
     }
 
-    // Apply filters
+    // 2. Fallback to local catalog if no trips were found in backend
+    if (list.length === 0) {
+      list = DUMMY_BUSES.filter(
+        (b) =>
+          b.departureCity.toLowerCase() === fromCity.toLowerCase() &&
+          b.arrivalCity.toLowerCase() === toCity.toLowerCase()
+      );
+
+      if (list.length === 0) {
+        list = DUMMY_BUSES.slice(0, 12).map((b, idx) => ({
+          ...b,
+          id: `adapted-${b.id}-${idx}`,
+          departureCity: fromCity,
+          arrivalCity: toCity,
+        }));
+      }
+    }
+
+    // 3. Apply client-side filters
     if (filters) {
       if (filters.busTypes && filters.busTypes.length > 0) {
         list = list.filter((b) => filters.busTypes?.includes(b.category));
@@ -66,7 +140,7 @@ export const busService = {
       }
     }
 
-    // Apply sorting
+    // 4. Apply sorting
     if (sortBy) {
       switch (sortBy) {
         case 'cheapest':
@@ -97,7 +171,6 @@ export const busService = {
   async getBusById(id: string): Promise<Bus | null> {
     const bus = DUMMY_BUSES.find((b) => b.id === id);
     if (bus) return bus;
-    // Check if it's an adapted id
     if (id.startsWith('adapted-')) {
       const originalId = id.split('-')[1] + '-' + id.split('-')[2];
       const match = DUMMY_BUSES.find((b) => b.id === originalId);
