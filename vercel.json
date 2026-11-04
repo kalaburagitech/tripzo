@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm --prefix admin install && npm --prefix admin run build",
+  "outputDirectory": "admin/.next",
+  "framework": "nextjs"
+}
