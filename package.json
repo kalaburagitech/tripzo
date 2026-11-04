@@ -44,6 +44,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "test": "node --test tests/coupon.test.js tests/fareAndCommission.test.js tests/seatLocking.test.js tests/cancellationRefund.test.js",
     "build": "npm --prefix admin run build"
   },
   "private": true
