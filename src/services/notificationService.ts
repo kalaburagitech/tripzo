@@ -1,4 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api, convexClient } from './convexClient';
+import { session } from './session';
 
 export interface AppNotification {
   id: string;
@@ -9,63 +10,47 @@ export interface AppNotification {
   read: boolean;
 }
 
-const NOTIFICATIONS_KEY = '@tripzo_notifications';
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'Just now';
+  if (min < 60) return `${min} min ago`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? 'Yesterday' : `${d} days ago`;
+}
+
+export function toAppNotification(n: any): AppNotification {
+  const type: AppNotification['type'] =
+    n.type === 'OFFER' ? 'offer' : n.type === 'TRIP_UPDATE' || n.type === 'TRIP_REMINDER' ? 'tracking' : 'booking';
+  return {
+    id: String(n._id),
+    title: n.title,
+    message: n.body,
+    time: relativeTime(n.createdAt),
+    type,
+    read: n.isRead,
+  };
+}
 
 export const notificationService = {
   async getNotifications(): Promise<AppNotification[]> {
+    const token = await session.load();
+    if (!token) return [];
     try {
-      const data = await AsyncStorage.getItem(NOTIFICATIONS_KEY);
-      if (data) return JSON.parse(data);
-
-      const defaults: AppNotification[] = [
-        {
-          id: 'n1',
-          title: 'Welcome to Tripzo!',
-          message: 'Enjoy ₹100 flat off on your first bus booking with coupon WELCOME100.',
-          time: 'Just now',
-          type: 'offer',
-          read: false,
-        },
-        {
-          id: 'n2',
-          title: 'Direct Buses: Bengaluru - Kalaburagi',
-          message: 'Overnight luxury Volvo AC sleeper coaches are now available daily.',
-          time: '2 hours ago',
-          type: 'booking',
-          read: true,
-        },
-        {
-          id: 'n3',
-          title: 'Weekend Travel Deals',
-          message: 'Get 15% discount on Goa and Mysuru weekend getaways with WEEKEND15.',
-          time: 'Yesterday',
-          type: 'offer',
-          read: true,
-        },
-      ];
-      await AsyncStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(defaults));
-      return defaults;
+      const list = await convexClient.query(api.notifications.listMine, { token });
+      return list.map(toAppNotification);
     } catch {
       return [];
     }
   },
 
   async markAllAsRead(): Promise<void> {
-    const list = await this.getNotifications();
-    const updated = list.map((n) => ({ ...n, read: true }));
-    await AsyncStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(updated));
-  },
-
-  async addNotification(title: string, message: string, type: 'booking' | 'offer' | 'tracking'): Promise<void> {
-    const list = await this.getNotifications();
-    list.unshift({
-      id: `notif_${Date.now()}`,
-      title,
-      message,
-      time: 'Just now',
-      type,
-      read: false,
-    });
-    await AsyncStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(list));
+    const token = await session.load();
+    if (!token) return;
+    try {
+      await convexClient.mutation(api.notifications.markAllRead, { token });
+    } catch {}
   },
 };

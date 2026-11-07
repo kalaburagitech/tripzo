@@ -1,5 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { requireAdmin, requireOperatorAccess } from "./lib/auth";
 
 /**
  * Razorpay Route Marketplace Settlement & Financial Ledger
@@ -8,14 +9,19 @@ import { v } from "convex/values";
 // 1. Process Operator Payout (Razorpay Route Transfer)
 export const processSettlementTransfer = mutation({
   args: {
+    token: v.string(),
     settlementId: v.id("settlements"),
   },
   handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.token);
     const settlement = await ctx.db.get(args.settlementId);
     if (!settlement) throw new Error("Settlement record not found");
 
     if (settlement.status === "PROCESSED") {
       return { success: true, message: "Settlement already processed." };
+    }
+    if (settlement.status !== "PENDING") {
+      throw new Error(`Settlement is ${settlement.status} and cannot be paid out.`);
     }
 
     const operator = await ctx.db.get(settlement.operatorId);
@@ -56,13 +62,14 @@ export const processSettlementTransfer = mutation({
 
 // 2. Query Operator Settlements
 export const getOperatorSettlements = query({
-  args: { operatorId: v.id("operators") },
+  args: { token: v.string(), operatorId: v.optional(v.id("operators")) },
   handler: async (ctx, args) => {
+    const { operator } = await requireOperatorAccess(ctx, args.token, args.operatorId);
     const settlements = await ctx.db
       .query("settlements")
-      .withIndex("by_operatorId", (q) => q.eq("operatorId", args.operatorId))
+      .withIndex("by_operatorId", (q) => q.eq("operatorId", operator._id))
       .order("desc")
-      .collect();
+      .take(200);
 
     const results = [];
     for (const s of settlements) {
@@ -80,8 +87,9 @@ export const getOperatorSettlements = query({
 
 // 3. Query Super Admin Financial Ledger
 export const getFinancialLedger = query({
-  args: { limit: v.optional(v.number()) },
+  args: { token: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.token);
     const limit = args.limit || 50;
     const ledger = await ctx.db
       .query("financialLedger")
@@ -89,5 +97,22 @@ export const getFinancialLedger = query({
       .take(limit);
 
     return ledger;
+  },
+});
+
+export const listPendingSettlements = query({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx, args.token);
+    const pending = await ctx.db
+      .query("settlements")
+      .withIndex("by_status", (q) => q.eq("status", "PENDING"))
+      .take(200);
+    const out = [];
+    for (const s of pending) {
+      const [op, booking] = await Promise.all([ctx.db.get(s.operatorId), ctx.db.get(s.bookingId)]);
+      out.push({ ...s, operatorName: op?.companyName || "", pnr: booking?.pnr || "" });
+    }
+    return out;
   },
 });

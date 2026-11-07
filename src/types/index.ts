@@ -29,7 +29,8 @@ export interface Seat {
   seatNumber: string;
   deck: 'lower' | 'upper';
   type: 'seater' | 'sleeper';
-  status: 'available' | 'booked' | 'selected' | 'female_reserved';
+  status: 'available' | 'booked' | 'selected' | 'female_reserved' | 'held';
+  isMine?: boolean;
   price: number;
   row: number;
   col: number; // 0: left window, 1: left aisle, 2: right aisle, 3: right window
@@ -71,6 +72,14 @@ export interface Bus {
   }[];
   reviews: BusReview[];
   photos: string[];
+  // Live marketplace fields
+  tripId?: string;
+  operatorId?: string;
+  journeyDate?: string;
+  departureAt?: number;
+  hasUpperDeck?: boolean;
+  busNumber?: string;
+  liveStatus?: 'SCHEDULED' | 'BOARDING' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED';
 }
 
 export interface Passenger {
@@ -115,6 +124,10 @@ export interface Booking {
   cancelledAt?: string;
   refundAmount?: number;
   qrPayload: string;
+  tripId?: string;
+  taxAmount?: number;
+  departureAt?: number;
+  tripLiveStatus?: 'SCHEDULED' | 'BOARDING' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED';
 }
 
 export interface RouteSearch {

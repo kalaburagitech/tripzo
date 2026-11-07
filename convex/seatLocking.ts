@@ -1,31 +1,34 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { getUser, requireUser } from "./lib/auth";
+import { tripDepartureAt } from "./lib/trips";
 
-const LOCK_DURATION_MS = 10 * 60 * 1000; // 10 minutes temporary hold
+export const LOCK_DURATION_MS = 10 * 60 * 1000; // 10 minute hold
+
+const genderV = v.union(v.literal("male"), v.literal("female"), v.literal("other"));
 
 /**
- * Concurrency-Safe Real-time Seat Locking Engine
+ * Live seat map. Reactive: clients subscribed with useQuery see other
+ * passengers' holds and bookings the moment they happen.
  */
-
-// 1. Get Live Trip Seat Map with auto-expiration check
 export const getTripSeatMap = query({
-  args: { tripId: v.id("trips") },
+  args: { tripId: v.id("trips"), token: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const trip = await ctx.db.get(args.tripId);
+    if (!trip) return null;
+    const viewer = await getUser(ctx, args.token);
+    const viewerId = viewer?._id;
+
     const seats = await ctx.db
       .query("tripSeats")
       .withIndex("by_tripId", (q) => q.eq("tripId", args.tripId))
       .collect();
 
     const now = Date.now();
-
-    // Map and sanitize seat status
-    const mappedSeats = seats.map((s) => {
-      let currentStatus = s.status;
-      // If locked but expired, consider available
-      if (currentStatus === "LOCKED" && s.lockExpiresAt && s.lockExpiresAt < now) {
-        currentStatus = "AVAILABLE";
-      }
-
+    const mapped = seats.map((s) => {
+      let status: "AVAILABLE" | "LOCKED" | "BOOKED" = s.status;
+      if (status === "LOCKED" && (!s.lockExpiresAt || s.lockExpiresAt < now)) status = "AVAILABLE";
+      const isMine = status === "LOCKED" && !!viewerId && s.lockedByUserId === viewerId;
       return {
         id: s._id,
         seatNumber: s.seatNumber,
@@ -34,136 +37,80 @@ export const getTripSeatMap = query({
         row: s.row,
         col: s.col,
         price: s.price,
-        status: currentStatus,
+        status,
+        isMine,
         isFemaleReserved: s.isFemaleReserved,
-        lockExpiresAt: s.lockExpiresAt,
-        lockedByUserId: s.lockedByUserId,
+        bookedByGender: status === "BOOKED" ? s.bookedByGender : undefined,
+        lockExpiresAt: isMine ? s.lockExpiresAt : undefined,
       };
     });
 
-    const lowerDeck = mappedSeats.filter((s) => s.berth === "lower");
-    const upperDeck = mappedSeats.filter((s) => s.berth === "upper");
-
     return {
-      lowerDeck,
-      upperDeck,
-      totalSeats: mappedSeats.length,
-      availableCount: mappedSeats.filter((s) => s.status === "AVAILABLE").length,
+      tripStatus: trip.liveStatus,
+      lowerDeck: mapped.filter((s) => s.berth === "lower"),
+      upperDeck: mapped.filter((s) => s.berth === "upper"),
+      totalSeats: mapped.length,
+      availableCount: mapped.filter((s) => s.status === "AVAILABLE").length,
     };
   },
 });
 
-// 2. Concurrency-Safe Seat Locking Mutation
+/**
+ * Hold seats for the signed-in passenger. Replaces any previous hold this
+ * passenger had on the same trip, so the hold always equals the selection.
+ */
 export const lockSeats = mutation({
   args: {
+    token: v.string(),
     tripId: v.id("trips"),
     seatNumbers: v.array(v.string()),
-    userId: v.string(), // Customer userId or guest identifier
-    gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"))),
+    gender: v.optional(genderV),
   },
   handler: async (ctx, args) => {
-    if (args.seatNumbers.length === 0) {
-      throw new Error("No seats selected for locking.");
-    }
-    if (args.seatNumbers.length > 6) {
-      throw new Error("Maximum 6 seats can be booked in a single reservation.");
-    }
+    const user = await requireUser(ctx, args.token);
+    const userId = user._id;
+    const wanted = Array.from(new Set(args.seatNumbers));
+    if (wanted.length === 0) throw new Error("No seats selected.");
+    if (wanted.length > 6) throw new Error("Maximum 6 seats can be booked in a single reservation.");
 
     const trip = await ctx.db.get(args.tripId);
     if (!trip) throw new Error("Trip not found");
+    if (trip.liveStatus !== "SCHEDULED" && trip.liveStatus !== "BOARDING") {
+      throw new Error("This trip is no longer open for booking.");
+    }
+    if (tripDepartureAt(trip) < Date.now()) {
+      throw new Error("This bus has already departed.");
+    }
 
     const now = Date.now();
     const expiresAt = now + LOCK_DURATION_MS;
+    const seats = await ctx.db
+      .query("tripSeats")
+      .withIndex("by_tripId", (q) => q.eq("tripId", args.tripId))
+      .collect();
+    const byNumber = new Map(seats.map((s) => [s.seatNumber, s]));
 
-    // Fetch all requested seat records with concurrency check
-    const seatDocs = [];
-    for (const seatNo of args.seatNumbers) {
-      const seat = await ctx.db
-        .query("tripSeats")
-        .withIndex("by_trip_and_seat", (q) =>
-          q.eq("tripId", args.tripId).eq("seatNumber", seatNo)
-        )
-        .first();
-
-      if (!seat) {
-        throw new Error(`Seat ${seatNo} does not exist on this bus.`);
-      }
-
-      // Check if already booked
-      if (seat.status === "BOOKED") {
-        throw new Error(`Seat ${seatNo} has already been booked by another passenger.`);
-      }
-
-      // Check if locked by someone else and lock has not expired
+    // Validate everything before writing anything (mutation is atomic anyway).
+    for (const seatNo of wanted) {
+      const seat = byNumber.get(seatNo);
+      if (!seat) throw new Error(`Seat ${seatNo} does not exist on this bus.`);
+      if (seat.status === "BOOKED") throw new Error(`Seat ${seatNo} was just booked by another passenger.`);
       if (
         seat.status === "LOCKED" &&
         seat.lockExpiresAt &&
         seat.lockExpiresAt > now &&
-        seat.lockedByUserId !== args.userId
+        seat.lockedByUserId !== userId
       ) {
-        throw new Error(
-          `Seat ${seatNo} is currently held by another passenger. Please select a different seat.`
-        );
+        throw new Error(`Seat ${seatNo} is being booked by another passenger. Please pick another seat.`);
       }
-
-      // Female seat reservation validation:
-      if (seat.isFemaleReserved && args.gender && args.gender === "male") {
-        throw new Error(`Seat ${seatNo} is reserved for female passengers only.`);
+      if (seat.isFemaleReserved && args.gender === "male") {
+        throw new Error(`Seat ${seatNo} is reserved for female passengers.`);
       }
-
-      seatDocs.push(seat);
     }
 
-    // Atomic update of all verified seats
-    for (const seat of seatDocs) {
-      await ctx.db.patch(seat._id, {
-        status: "LOCKED",
-        lockedByUserId: args.userId,
-        lockExpiresAt: expiresAt,
-        bookedByGender: args.gender,
-        version: seat.version + 1,
-      });
-    }
-
-    // Recalculate and update available seat count
-    const remainingAvailable = await ctx.db
-      .query("tripSeats")
-      .withIndex("by_tripId", (q) => q.eq("tripId", args.tripId))
-      .filter((q) => q.eq(q.field("status"), "AVAILABLE"))
-      .collect();
-
-    await ctx.db.patch(args.tripId, {
-      availableSeatsCount: Math.max(0, remainingAvailable.length - seatDocs.length),
-      updatedAt: now,
-    });
-
-    return {
-      success: true,
-      lockedSeats: args.seatNumbers,
-      expiresAt,
-      lockDurationSeconds: LOCK_DURATION_MS / 1000,
-    };
-  },
-});
-
-// 3. Unlock Seats (User cancelled or backed out)
-export const unlockSeats = mutation({
-  args: {
-    tripId: v.id("trips"),
-    seatNumbers: v.array(v.string()),
-    userId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    for (const seatNo of args.seatNumbers) {
-      const seat = await ctx.db
-        .query("tripSeats")
-        .withIndex("by_trip_and_seat", (q) =>
-          q.eq("tripId", args.tripId).eq("seatNumber", seatNo)
-        )
-        .first();
-
-      if (seat && seat.status === "LOCKED" && seat.lockedByUserId === args.userId) {
+    // Release this passenger's holds that are no longer selected.
+    for (const seat of seats) {
+      if (seat.status === "LOCKED" && seat.lockedByUserId === userId && !wanted.includes(seat.seatNumber)) {
         await ctx.db.patch(seat._id, {
           status: "AVAILABLE",
           lockedByUserId: undefined,
@@ -173,40 +120,68 @@ export const unlockSeats = mutation({
       }
     }
 
+    for (const seatNo of wanted) {
+      const seat = byNumber.get(seatNo)!;
+      await ctx.db.patch(seat._id, {
+        status: "LOCKED",
+        lockedByUserId: userId,
+        lockExpiresAt: expiresAt,
+        version: seat.version + 1,
+      });
+    }
+
+    return {
+      success: true,
+      lockedSeats: wanted,
+      expiresAt,
+      lockDurationSeconds: LOCK_DURATION_MS / 1000,
+    };
+  },
+});
+
+export const unlockSeats = mutation({
+  args: { token: v.string(), tripId: v.id("trips"), seatNumbers: v.optional(v.array(v.string())) },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx, args.token);
+    const seats = await ctx.db
+      .query("tripSeats")
+      .withIndex("by_tripId", (q) => q.eq("tripId", args.tripId))
+      .collect();
+    for (const seat of seats) {
+      if (
+        seat.status === "LOCKED" &&
+        seat.lockedByUserId === user._id &&
+        (!args.seatNumbers || args.seatNumbers.includes(seat.seatNumber))
+      ) {
+        await ctx.db.patch(seat._id, {
+          status: "AVAILABLE",
+          lockedByUserId: undefined,
+          lockExpiresAt: undefined,
+          version: seat.version + 1,
+        });
+      }
+    }
     return { success: true };
   },
 });
 
-// 4. Background Job: Release Expired Seat Locks across all trips
-export const releaseExpiredLocks = mutation({
+/** Cron: release abandoned holds. */
+export const releaseExpiredLocks = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    const expiredSeats = await ctx.db
+    const expired = await ctx.db
       .query("tripSeats")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("status"), "LOCKED"),
-          q.neq(q.field("lockExpiresAt"), undefined),
-          q.lt(q.field("lockExpiresAt"), now)
-        )
-      )
-      .take(100);
-
-    let releasedCount = 0;
-    const affectedTripIds = new Set<string>();
-
-    for (const seat of expiredSeats) {
+      .withIndex("by_status_and_expiry", (q) => q.eq("status", "LOCKED").lt("lockExpiresAt", now))
+      .take(500);
+    for (const seat of expired) {
       await ctx.db.patch(seat._id, {
         status: "AVAILABLE",
         lockedByUserId: undefined,
         lockExpiresAt: undefined,
         version: seat.version + 1,
       });
-      affectedTripIds.add(seat.tripId);
-      releasedCount++;
     }
-
-    return { releasedCount, affectedTrips: affectedTripIds.size };
+    return { releasedCount: expired.length };
   },
 });

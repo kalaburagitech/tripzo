@@ -6,6 +6,8 @@ import { Colors, Shadows, Radii } from '../constants/theme';
 
 interface SeatMapProps {
   bus: Bus;
+  /** Live seats from the server (getTripSeatMap). */
+  seats: Seat[];
   selectedSeats: Seat[];
   onToggleSeat: (seat: Seat) => void;
   maxSeats?: number;
@@ -13,104 +15,23 @@ interface SeatMapProps {
 
 export const SeatMap: React.FC<SeatMapProps> = ({
   bus,
+  seats,
   selectedSeats,
   onToggleSeat,
-  maxSeats = 6,
 }) => {
-  const isSleeper = bus.category === 'sleeper' || bus.category === 'semi-sleeper';
+  const hasUpper = seats.some((s) => s.deck === 'upper');
   const [activeDeck, setActiveDeck] = useState<'lower' | 'upper'>('lower');
 
-  // Generate realistic seats for the bus
-  const generateSeats = (): Seat[] => {
-    const seats: Seat[] = [];
-    const rows = 6;
-
-    if (isSleeper) {
-      // 2 decks: lower and upper. Each row has 1 single sleeper on left (col 0) and 2 sleepers on right (col 2, 3)
-      ['lower', 'upper'].forEach((deck) => {
-        const prefix = deck === 'lower' ? 'L' : 'U';
-        for (let r = 1; r <= rows; r++) {
-          // Left single berth
-          const s1Num = `${prefix}${r}A`;
-          const isBooked1 = (r === 2 && deck === 'lower') || (r === 4 && deck === 'upper');
-          const isFemale1 = r === 3 && deck === 'lower';
-          seats.push({
-            id: `seat-${s1Num}`,
-            seatNumber: s1Num,
-            deck: deck as 'lower' | 'upper',
-            type: 'sleeper',
-            status: isBooked1 ? 'booked' : isFemale1 ? 'female_reserved' : 'available',
-            price: bus.price + (deck === 'lower' ? 50 : 0),
-            row: r,
-            col: 0,
-            bookedByGender: isFemale1 ? 'female' : undefined,
-          });
-
-          // Right double berths
-          const s2Num = `${prefix}${r}B`;
-          const isBooked2 = (r === 1 && deck === 'lower') || (r === 5 && deck === 'upper');
-          seats.push({
-            id: `seat-${s2Num}`,
-            seatNumber: s2Num,
-            deck: deck as 'lower' | 'upper',
-            type: 'sleeper',
-            status: isBooked2 ? 'booked' : 'available',
-            price: bus.price + (deck === 'lower' ? 50 : 0),
-            row: r,
-            col: 2,
-          });
-
-          const s3Num = `${prefix}${r}C`;
-          const isBooked3 = r === 6 && deck === 'lower';
-          const isFemale3 = r === 2 && deck === 'upper';
-          seats.push({
-            id: `seat-${s3Num}`,
-            seatNumber: s3Num,
-            deck: deck as 'lower' | 'upper',
-            type: 'sleeper',
-            status: isBooked3 ? 'booked' : isFemale3 ? 'female_reserved' : 'available',
-            price: bus.price + (deck === 'lower' ? 50 : 0),
-            row: r,
-            col: 3,
-            bookedByGender: isFemale3 ? 'female' : undefined,
-          });
-        }
-      });
-    } else {
-      // Seater 2+2 layout
-      for (let r = 1; r <= 8; r++) {
-        ['A', 'B', 'C', 'D'].forEach((colLetter, cIdx) => {
-          const seatNum = `${r}${colLetter}`;
-          const isBooked = (r === 2 && (cIdx === 0 || cIdx === 1)) || (r === 5 && cIdx === 3);
-          const isFemale = r === 1 && (cIdx === 0 || cIdx === 1);
-          seats.push({
-            id: `seat-${seatNum}`,
-            seatNumber: seatNum,
-            deck: 'lower',
-            type: 'seater',
-            status: isBooked ? 'booked' : isFemale ? 'female_reserved' : 'available',
-            price: bus.price,
-            row: r,
-            col: cIdx <= 1 ? cIdx : cIdx + 1, // 0, 1 aisle 3, 4
-            bookedByGender: isFemale ? 'female' : undefined,
-          });
-        });
-      }
-    }
-
-    return seats;
-  };
-
-  const allSeats = generateSeats();
-  const currentDeckSeats = isSleeper
-    ? allSeats.filter((s) => s.deck === activeDeck)
-    : allSeats;
+  const currentDeckSeats = (hasUpper ? seats.filter((s) => s.deck === activeDeck) : seats)
+    .slice()
+    .sort((a, b) => a.row - b.row || a.col - b.col);
 
   const isSelected = (seat: Seat) => selectedSeats.some((s) => s.id === seat.id);
 
   const getSeatColor = (seat: Seat) => {
     if (isSelected(seat)) return Colors.orange;
     if (seat.status === 'booked') return '#CBD5E1';
+    if (seat.status === 'held') return '#FDE68A';
     if (seat.status === 'female_reserved') return '#F472B6';
     return Colors.white;
   };
@@ -118,17 +39,19 @@ export const SeatMap: React.FC<SeatMapProps> = ({
   const getSeatBorder = (seat: Seat) => {
     if (isSelected(seat)) return Colors.orange;
     if (seat.status === 'booked') return '#94A3B8';
+    if (seat.status === 'held') return '#F59E0B';
     if (seat.status === 'female_reserved') return '#EC4899';
     return '#94A3B8';
   };
 
   const renderSeatItem = (seat: Seat) => {
     const selected = isSelected(seat);
-    const booked = seat.status === 'booked';
+    const booked = seat.status === 'booked' || seat.status === 'held';
     const isFemale = seat.status === 'female_reserved';
+    const sleeperSeat = seat.type === 'sleeper';
 
-    const width = isSleeper ? (seat.col === 0 ? 56 : 52) : 44;
-    const height = isSleeper ? 82 : 46;
+    const width = sleeperSeat ? (seat.col === 0 ? 56 : 52) : 44;
+    const height = sleeperSeat ? 82 : 46;
 
     return (
       <TouchableOpacity
@@ -147,7 +70,7 @@ export const SeatMap: React.FC<SeatMapProps> = ({
         activeOpacity={0.7}
       >
         {/* Pillow area for sleeper berth */}
-        {isSleeper && (
+        {sleeperSeat && (
           <View
             style={[
               styles.pillow,
@@ -194,8 +117,8 @@ export const SeatMap: React.FC<SeatMapProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Deck Selector Tabs if Sleeper */}
-      {isSleeper && (
+      {/* Deck Selector Tabs if the bus has two decks */}
+      {hasUpper && (
         <View style={styles.deckTabs}>
           <TouchableOpacity
             style={[styles.deckTab, activeDeck === 'lower' && styles.deckTabActive]}
@@ -292,6 +215,11 @@ export const SeatMap: React.FC<SeatMapProps> = ({
         <View style={styles.legendItem}>
           <View style={[styles.legendBox, { backgroundColor: '#CBD5E1', borderColor: '#94A3B8' }]} />
           <Text style={styles.legendLabel}>Booked</Text>
+        </View>
+
+        <View style={styles.legendItem}>
+          <View style={[styles.legendBox, { backgroundColor: '#FDE68A', borderColor: '#F59E0B' }]} />
+          <Text style={styles.legendLabel}>On hold</Text>
         </View>
       </View>
     </View>
@@ -431,6 +359,8 @@ const styles = StyleSheet.create({
   },
   legendContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 8,
     justifyContent: 'space-around',
     marginTop: 16,
     paddingHorizontal: 16,

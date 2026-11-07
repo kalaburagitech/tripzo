@@ -8,6 +8,9 @@ export default defineSchema({
     email: v.optional(v.string()),
     name: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
+    gender: v.optional(v.union(v.literal("male"), v.literal("female"), v.literal("other"))),
+    age: v.optional(v.number()),
+    isGuest: v.optional(v.boolean()),
     role: v.union(v.literal("CUSTOMER"), v.literal("BOOKING_SUPPORT")),
     isVerified: v.boolean(),
     savedPassengers: v.optional(
@@ -225,6 +228,8 @@ export default defineSchema({
 
   // 11. trips - Scheduled journeys
   trips: defineTable({
+    scheduleId: v.optional(v.id("recurringSchedules")),
+    departureAt: v.optional(v.number()), // epoch ms of departure (IST-adjusted)
     operatorId: v.id("operators"),
     busId: v.id("buses"),
     routeId: v.id("routes"),
@@ -264,7 +269,9 @@ export default defineSchema({
     .index("by_operatorId", ["operatorId"])
     .index("by_route_and_date", ["fromCity", "toCity", "journeyDate"])
     .index("by_busId", ["busId"])
-    .index("by_liveStatus", ["liveStatus"]),
+    .index("by_liveStatus", ["liveStatus"])
+    .index("by_schedule_and_date", ["scheduleId", "journeyDate"])
+    .index("by_operator_and_date", ["operatorId", "journeyDate"]),
 
   // 12. tripSeats - Real-time seat inventory & locking
   tripSeats: defineTable({
@@ -503,7 +510,8 @@ export default defineSchema({
       v.literal("TRIP_REMINDER"),
       v.literal("SEAT_LOCKED"),
       v.literal("CANCELLATION"),
-      v.literal("OFFER")
+      v.literal("OFFER"),
+      v.literal("TRIP_UPDATE")
     ),
     metadata: v.optional(v.string()), // JSON string of extra props
     isRead: v.boolean(),
@@ -638,4 +646,42 @@ export default defineSchema({
     updatedBy: v.optional(v.string()),
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
+
+  // 30. sessions - Opaque bearer tokens for passengers and portal staff
+  sessions: defineTable({
+    token: v.string(),
+    kind: v.union(v.literal("USER"), v.literal("ADMIN")),
+    userId: v.optional(v.id("users")),
+    adminId: v.optional(v.id("adminUsers")),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_expiresAt", ["expiresAt"]),
+
+  // 31. otpCodes - One-time login codes (hashed)
+  otpCodes: defineTable({
+    phone: v.string(),
+    codeHash: v.string(),
+    attempts: v.number(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  }).index("by_phone", ["phone"]),
+
+  // 32. recurringSchedules - Operator service timetables that auto-generate trips
+  recurringSchedules: defineTable({
+    operatorId: v.id("operators"),
+    busId: v.id("buses"),
+    routeId: v.id("routes"),
+    departureTime: v.string(), // "21:30" IST
+    durationMinutes: v.number(),
+    baseFare: v.number(),
+    daysOfWeek: v.array(v.number()), // 0=Sun ... 6=Sat
+    isActive: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_operatorId", ["operatorId"])
+    .index("by_isActive", ["isActive"])
+    .index("by_busId", ["busId"]),
 });

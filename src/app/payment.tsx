@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,16 +11,27 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { TripzoHeader } from '../components/TripzoHeader';
-import { couponService } from '../services/couponService';
-import { paymentService } from '../services/paymentService';
 import { bookingService } from '../services/bookingService';
-import { notificationService } from '../services/notificationService';
-import { LocationPoint, Passenger, Bus } from '../types';
+import { api, convexClient, errorMessage } from '../services/convexClient';
+import { session } from '../services/session';
+import { LocationPoint, Passenger } from '../types';
 import { Colors, Shadows, Radii } from '../constants/theme';
 import { useToast } from '../components/Toast';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+type Quote = {
+  baseFare: number;
+  discountAmount: number;
+  convenienceFee: number;
+  taxAmount: number;
+  totalAmount: number;
+  coupon: { code: string; title: string } | null;
+  couponMessage?: string;
+};
 
 export default function PaymentScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const params = useLocalSearchParams<{
     busId: string;
@@ -34,107 +45,112 @@ export default function PaymentScreen() {
     droppingPoint: string;
   }>();
 
-  const baseFare = parseInt(params.totalFare || '0', 10);
-  const convenienceFee = 49;
+  const seatNumbers: string[] = params.seats ? JSON.parse(params.seats) : [];
 
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'wallet' | 'netbanking'>('upi');
   const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<{
-    code: string;
-    discount: number;
-    title: string;
-  } | null>(null);
+  const [quote, setQuote] = useState<Quote | null>(null);
   const [loading, setLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
 
-  // Card dummy fields
-  const [cardNumber, setCardNumber] = useState('4532 •••• •••• 8910');
-  const [upiId, setUpiId] = useState('traveler@okhdfcbank');
+  const cardNumber = '4532 •••• •••• 8910';
+  const upiId = 'traveler@okhdfcbank';
 
-  const discountAmount = appliedCoupon ? appliedCoupon.discount : 0;
-  const finalAmount = Math.max(0, baseFare + convenienceFee - discountAmount);
+  // Server-authoritative fare quote (includes GST + convenience fee + coupon)
+  const fetchQuote = async (code?: string): Promise<Quote | null> => {
+    const token = await session.load();
+    const q = await convexClient.query(api.bookings.quoteFare, {
+      tripId: params.busId as any,
+      seatNumbers,
+      couponCode: code,
+      token: token ?? undefined,
+    });
+    return q as Quote | null;
+  };
 
-  const handleApplyCoupon = (codeToApply?: string) => {
-    const code = codeToApply || couponCode;
-    if (!code.trim()) {
+  useEffect(() => {
+    fetchQuote()
+      .then((q) => {
+        if (q) setQuote(q);
+        else showToast('This trip is no longer available.', { type: 'error' });
+      })
+      .catch((err) => showToast(errorMessage(err), { type: 'error' }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.busId, params.seats]);
+
+  const baseFare = quote?.baseFare ?? parseInt(params.totalFare || '0', 10);
+  const convenienceFee = quote?.convenienceFee ?? 0;
+  const taxAmount = quote?.taxAmount ?? 0;
+  const appliedCoupon = quote?.coupon ? { ...quote.coupon, discount: quote.discountAmount } : null;
+  const finalAmount = quote?.totalAmount ?? 0;
+
+  const handleApplyCoupon = async (codeToApply?: string) => {
+    const code = (codeToApply || couponCode).trim().toUpperCase();
+    if (!code) {
       showToast('Please enter a coupon code', { type: 'warning' });
       return;
     }
-
-    const result = couponService.validateAndApply(code, baseFare);
-    if (result.valid) {
-      setAppliedCoupon({
-        code: result.coupon!.code,
-        discount: result.discountAmount,
-        title: result.coupon!.title,
-      });
-      setCouponCode(result.coupon!.code);
-      showToast(result.message, { type: 'success' });
-    } else {
-      showToast(result.message, { type: 'error' });
+    setApplying(true);
+    try {
+      const q = await fetchQuote(code);
+      if (q?.coupon) {
+        setQuote(q);
+        setCouponCode(q.coupon.code);
+        showToast(q.couponMessage || 'Coupon applied!', { type: 'success' });
+      } else {
+        showToast(q?.couponMessage || 'Invalid coupon code.', { type: 'error' });
+      }
+    } catch (err) {
+      showToast(errorMessage(err), { type: 'error' });
+    } finally {
+      setApplying(false);
     }
   };
 
-  const handleRemoveCoupon = () => {
-    setAppliedCoupon(null);
+  const handleRemoveCoupon = async () => {
     setCouponCode('');
+    try {
+      const q = await fetchQuote();
+      if (q) setQuote(q);
+    } catch {}
     showToast('Coupon removed', { type: 'info' });
   };
 
   const handlePayNow = async () => {
+    if (!quote) {
+      showToast('Fetching latest fare, please wait…', { type: 'warning' });
+      return;
+    }
     setLoading(true);
-
     try {
-      // 1. Simulate payment
-      const paymentRes = await paymentService.simulatePayment(finalAmount, paymentMethod);
-
-      // Parse payload details
-      const selectedSeats: string[] = JSON.parse(params.seats);
       const passengers: Passenger[] = JSON.parse(params.passengers);
       const boardingPoint: LocationPoint = JSON.parse(params.boardingPoint);
       const droppingPoint: LocationPoint = JSON.parse(params.droppingPoint);
 
-      // Fetch or build bus reference
-      const { busService } = await import('../services/busService');
-      const bus = await busService.getBusById(params.busId);
-
-      // 2. Persist booking locally
-      const newBooking = await bookingService.createBooking({
-        bus: bus!,
-        travelDate: params.travelDate,
-        selectedSeats,
+      const res = await bookingService.createBooking({
+        tripId: params.busId,
+        seatNumbers,
         passengers,
-        contactPhone: params.phone,
-        contactEmail: params.email,
         boardingPoint,
         droppingPoint,
-        baseFare,
-        discountAmount,
-        appliedCoupon: appliedCoupon?.code,
-        convenienceFee,
-        totalAmount: finalAmount,
+        contactPhone: params.phone,
+        contactEmail: params.email,
+        couponCode: appliedCoupon?.code,
         paymentMethod,
-        paymentId: paymentRes.transactionId,
-        status: 'upcoming',
+        expectedTotal: quote.totalAmount,
       });
 
-      // 3. Trigger booking confirmation notification
-      await notificationService.addNotification(
-        'Booking Confirmed!',
-        `Your ticket for ${bus!.departureCity} to ${bus!.arrivalCity} is confirmed (PNR: ${newBooking.pnr}).`,
-        'booking'
-      );
-
       setLoading(false);
-      showToast('Payment Successful! Ticket Confirmed.', { type: 'success' });
-
-      // 4. Navigate to ticket confirmation
+      showToast(`Payment Successful! PNR ${res.pnr}`, { type: 'success' });
       router.replace({
         pathname: '/ticket-confirmation',
-        params: { bookingId: newBooking.id },
+        params: { bookingId: res.bookingId },
       });
     } catch (err) {
       setLoading(false);
-      showToast('Payment simulation encountered an error. Please try again.', { type: 'error' });
+      showToast(errorMessage(err), { type: 'error' });
+      // Fare may have changed on the server; refresh the quote
+      fetchQuote(appliedCoupon?.code).then((q) => q && setQuote(q)).catch(() => {});
     }
   };
 
@@ -148,13 +164,18 @@ export default function PaymentScreen() {
           <Text style={styles.cardTitle}>Fare Breakdown</Text>
 
           <View style={styles.fareRow}>
-            <Text style={styles.fareItem}>Ticket Base Fare ({params.seats ? JSON.parse(params.seats).length : 1} seats)</Text>
+            <Text style={styles.fareItem}>Ticket Base Fare ({seatNumbers.length} seats)</Text>
             <Text style={styles.fareValue}>₹{baseFare}</Text>
           </View>
 
           <View style={styles.fareRow}>
-            <Text style={styles.fareItem}>Convenience Fee & Taxes</Text>
+            <Text style={styles.fareItem}>Convenience Fee</Text>
             <Text style={styles.fareValue}>₹{convenienceFee}</Text>
+          </View>
+
+          <View style={styles.fareRow}>
+            <Text style={styles.fareItem}>GST (5%)</Text>
+            <Text style={styles.fareValue}>₹{taxAmount}</Text>
           </View>
 
           {appliedCoupon && (
@@ -208,6 +229,7 @@ export default function PaymentScreen() {
               <TouchableOpacity
                 style={styles.applyBtn}
                 onPress={() => handleApplyCoupon()}
+                disabled={applying}
                 activeOpacity={0.8}
               >
                 <Text style={styles.applyBtnText}>Apply</Text>
@@ -294,7 +316,7 @@ export default function PaymentScreen() {
       </ScrollView>
 
       {/* Bottom Sticky Payment CTA */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View>
           <Text style={styles.finalTotalLabel}>Grand Total</Text>
           <Text style={styles.finalTotalAmount}>₹{finalAmount}</Text>
@@ -303,7 +325,7 @@ export default function PaymentScreen() {
         <TouchableOpacity
           style={[styles.payButton, loading && styles.payButtonDisabled]}
           onPress={handlePayNow}
-          disabled={loading}
+          disabled={loading || !quote}
           activeOpacity={0.8}
         >
           {loading ? (

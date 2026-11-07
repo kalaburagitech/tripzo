@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
@@ -14,6 +15,7 @@ import { BusCard } from '../components/BusCard';
 import { BusListSkeleton } from '../components/SkeletonLoader';
 import { FilterModal } from '../components/FilterModal';
 import { SortModal } from '../components/SortModal';
+import { CalendarModal } from '../components/CalendarModal';
 import { busService } from '../services/busService';
 import { Bus, BusFilters, SortOption } from '../types';
 import { Colors, Radii, Shadows } from '../constants/theme';
@@ -29,7 +31,10 @@ export default function BusResultsScreen() {
 
   const fromCity = params.from || 'Bengaluru';
   const toCity = params.to || 'Hyderabad';
-  const travelDate = params.date || new Date().toISOString().split('T')[0];
+  const [currentDate, setCurrentDate] = useState<string>(
+    params.date || new Date().toISOString().split('T')[0]
+  );
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   const [buses, setBuses] = useState<Bus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,20 +52,24 @@ export default function BusResultsScreen() {
     operators: [],
   });
 
-  useEffect(() => {
-    fetchBuses();
-  }, [filters, selectedSort]);
-
   const fetchBuses = async () => {
     setLoading(true);
-    const results = await busService.getBuses(fromCity, toCity, filters, selectedSort);
+    const results = await busService.getBuses(fromCity, toCity, filters, selectedSort, currentDate);
     setBuses(results);
     setLoading(false);
     setRefreshing(false);
   };
 
+  useEffect(() => {
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchBuses();
+  }, [filters, selectedSort, currentDate]);
+
   const handleRefresh = () => {
     setRefreshing(true);
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchBuses();
   };
 
@@ -69,7 +78,7 @@ export default function BusResultsScreen() {
       pathname: '/seat-selection',
       params: {
         busId: bus.id,
-        travelDate,
+        travelDate: currentDate,
         passengers: params.passengers || '1',
       },
     });
@@ -81,12 +90,84 @@ export default function BusResultsScreen() {
     filters.departureSlot !== 'all' ||
     filters.minRating > 0;
 
+  // Generate 7-day carousel around currentDate
+  const todayIso = new Date().toISOString().split('T')[0];
+  const dateStripItems = (() => {
+    const list: Array<{ iso: string; dayName: string; dayNum: string; isToday: boolean }> = [];
+    const base = new Date(currentDate + 'T00:00:00');
+    // Start from max(today, currentDate - 1 day)
+    const start = new Date(base);
+    start.setDate(start.getDate() - 1);
+    const startIso = start.toISOString().split('T')[0];
+    const effectiveStart = startIso < todayIso ? new Date(todayIso + 'T00:00:00') : start;
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(effectiveStart);
+      d.setDate(d.getDate() + i);
+      const iso = d.toISOString().split('T')[0];
+      const dayName = d.toLocaleDateString('en-IN', { weekday: 'short' });
+      const dayNum = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      list.push({
+        iso,
+        dayName,
+        dayNum,
+        isToday: iso === todayIso,
+      });
+    }
+    return list;
+  })();
+
+  const formatHeaderDate = (iso: string) => {
+    try {
+      const d = new Date(iso + 'T00:00:00');
+      return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+    } catch {
+      return iso;
+    }
+  };
+
   return (
     <View style={styles.container}>
       <TripzoHeader
         title={`${fromCity} → ${toCity}`}
-        subtitle={`${travelDate} • ${buses.length} Buses Available`}
+        subtitle={`${formatHeaderDate(currentDate)} • ${buses.length} Buses Available`}
       />
+
+      {/* Interactive Horizontal Date Selection Strip */}
+      <View style={styles.dateStripContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dateStripScroll}
+        >
+          {dateStripItems.map((item) => {
+            const active = item.iso === currentDate;
+            return (
+              <TouchableOpacity
+                key={item.iso}
+                style={[styles.dateChip, active && styles.dateChipActive]}
+                onPress={() => setCurrentDate(item.iso)}
+              >
+                <Text style={[styles.dateChipDay, active && styles.dateChipTextActive]}>
+                  {item.isToday ? 'Today' : item.dayName}
+                </Text>
+                <Text style={[styles.dateChipDate, active && styles.dateChipTextActive]}>
+                  {item.dayNum}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+
+          {/* Calendar Picker Button */}
+          <TouchableOpacity
+            style={styles.calendarStripBtn}
+            onPress={() => setIsCalendarOpen(true)}
+          >
+            <Ionicons name="calendar" size={16} color={Colors.orange} />
+            <Text style={styles.calendarStripBtnText}>Calendar</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
 
       {/* Filter & Sort Action Strip */}
       <View style={styles.filterStrip}>
@@ -243,7 +324,7 @@ export default function BusResultsScreen() {
               onViewDetails={(b) =>
                 router.push({
                   pathname: '/bus-details',
-                  params: { busId: b.id, travelDate },
+                  params: { busId: b.id, travelDate: currentDate },
                 })
               }
             />
@@ -285,6 +366,15 @@ export default function BusResultsScreen() {
         onClose={() => setShowSortModal(false)}
         onSelect={(sort) => setSelectedSort(sort)}
       />
+
+      {/* Calendar Modal */}
+      <CalendarModal
+        visible={isCalendarOpen}
+        onClose={() => setIsCalendarOpen(false)}
+        selectedDate={currentDate}
+        onSelectDate={(newDate) => setCurrentDate(newDate)}
+        minDate={todayIso}
+      />
     </View>
   );
 }
@@ -293,6 +383,61 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  dateStripContainer: {
+    backgroundColor: '#0F1A34',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E2D52',
+  },
+  dateStripScroll: {
+    paddingHorizontal: 12,
+    gap: 8,
+    alignItems: 'center',
+  },
+  dateChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: Radii.pill,
+    backgroundColor: '#1E2D52',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 68,
+  },
+  dateChipActive: {
+    backgroundColor: Colors.orange,
+    ...Shadows.sm,
+  },
+  dateChipDay: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94A3B8',
+    textTransform: 'uppercase',
+  },
+  dateChipDate: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#E2E8F0',
+    marginTop: 1,
+  },
+  dateChipTextActive: {
+    color: '#FFFFFF',
+  },
+  calendarStripBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: Radii.pill,
+    backgroundColor: 'rgba(255, 117, 71, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 117, 71, 0.4)',
+  },
+  calendarStripBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.orange,
   },
   filterStrip: {
     flexDirection: 'row',

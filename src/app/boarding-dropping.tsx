@@ -13,9 +13,11 @@ import { busService } from '../services/busService';
 import { Bus, LocationPoint } from '../types';
 import { Colors, Shadows, Radii } from '../constants/theme';
 import { useToast } from '../components/Toast';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function BoardingDroppingScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const params = useLocalSearchParams<{
     busId: string;
@@ -174,7 +176,7 @@ export default function BoardingDroppingScreen() {
       </ScrollView>
 
       {/* Bottom Sticky Action Bar */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.summaryCol}>
           <Text style={styles.summaryRoute}>
             {selectedBoarding?.name.split('/')[0]} → {selectedDropping?.name.split('/')[0]}

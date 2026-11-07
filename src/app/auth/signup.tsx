@@ -26,12 +26,15 @@ export default function SignupScreen() {
   const [gender, setGender] = useState<'male' | 'female' | 'other'>('male');
   const [loading, setLoading] = useState(false);
 
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+
   const handleSignup = async () => {
     if (!name.trim()) {
       showToast('Please enter your full name', { type: 'error' });
       return;
     }
-    if (phone.trim().length < 10) {
+    if (phone.replace(/[^0-9]/g, '').length < 10) {
       showToast('Please enter a valid 10-digit mobile number', { type: 'error' });
       return;
     }
@@ -41,15 +44,32 @@ export default function SignupScreen() {
     }
 
     setLoading(true);
-    const res = await authService.signup(name, phone, email);
-    if (gender) {
-      await authService.updateProfile({ gender });
+    if (!otpSent) {
+      const sent = await authService.sendOtp(phone);
+      setLoading(false);
+      if (!sent.success) {
+        showToast(sent.message, { type: 'error' });
+        return;
+      }
+      setOtpSent(true);
+      showToast(sent.demoOtp ? `Demo mode: your OTP is ${sent.demoOtp}` : 'OTP sent to your mobile', {
+        type: 'info',
+      });
+      return;
     }
+
+    const res = await authService.verifyOtp(phone, otp.trim(), {
+      name: name.trim(),
+      email: email.trim(),
+      gender,
+    });
     setLoading(false);
 
     if (res.success) {
       showToast('Account created successfully!', { type: 'success' });
       router.replace('/(tabs)');
+    } else {
+      showToast(res.message, { type: 'error' });
     }
   };
 
@@ -140,8 +160,32 @@ export default function SignupScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.submitBtn} onPress={handleSignup} activeOpacity={0.8}>
-            <Text style={styles.submitBtnText}>Complete Sign Up</Text>
+          {otpSent && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Enter 6-digit OTP sent to +91 {phone}</Text>
+              <View style={styles.inputBox}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="••••••"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  value={otp}
+                  onChangeText={setOtp}
+                />
+              </View>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[styles.submitBtn, loading && { opacity: 0.6 }]}
+            onPress={handleSignup}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.submitBtnText}>
+              {loading ? 'Please wait…' : otpSent ? 'Verify & Create Account' : 'Send OTP'}
+            </Text>
             <Ionicons name="checkmark-circle" size={18} color={Colors.white} />
           </TouchableOpacity>
         </View>

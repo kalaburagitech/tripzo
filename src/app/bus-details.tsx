@@ -13,9 +13,11 @@ import { TripzoHeader } from '../components/TripzoHeader';
 import { busService } from '../services/busService';
 import { Bus } from '../types';
 import { Colors, Shadows, Radii } from '../constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function BusDetailsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { busId, travelDate } = useLocalSearchParams<{ busId: string; travelDate: string }>();
 
   const [bus, setBus] = useState<Bus | null>(null);
@@ -220,7 +222,7 @@ export default function BusDetailsScreen() {
       </ScrollView>
 
       {/* Bottom Sticky Action Bar */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
         <View style={styles.bottomFare}>
           <Text style={styles.fareLabel}>Starting from</Text>
           <Text style={styles.farePrice}>₹{bus.price}</Text>

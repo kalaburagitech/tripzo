@@ -43,11 +43,19 @@ export default function SuperAdminPage() {
   const [busSearch, setBusSearch] = useState("");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
+  const pendingOperators = operators.filter(
+    (o) => o.status === "PENDING" || o.status === "UNDER_REVIEW"
+  );
+
   const handleStatusChange = async (operatorId: any, status: any) => {
     try {
-      await updateOperatorStatus({ operatorId, status });
-      setActionMessage(`Operator status updated to ${status}`);
-      setTimeout(() => setActionMessage(null), 3000);
+      await updateOperatorStatus({ token: "demo-admin-token", operatorId, status });
+      setActionMessage(
+        status === "ACTIVE" || status === "APPROVED"
+          ? `Operator approved and activated successfully! They can now log in and register buses.`
+          : `Operator status updated to ${status}.`
+      );
+      setTimeout(() => setActionMessage(null), 3500);
     } catch (err: any) {
       alert(err.message);
     }
@@ -112,7 +120,14 @@ export default function SuperAdminPage() {
         <div className="flex items-center gap-2 border-b border-slate-200 pb-4 mb-8 overflow-x-auto">
           {[
             { id: "overview", label: "Executive Overview", icon: TrendingUp },
-            { id: "operators", label: `Operators (${operators.length})`, icon: Building2 },
+            {
+              id: "operators",
+              label:
+                pendingOperators.length > 0
+                  ? `Operators (${pendingOperators.length} Pending Approval)`
+                  : `Operators (${operators.length})`,
+              icon: Building2,
+            },
             { id: "buses", label: `Fleet Vehicles (${buses.length})`, icon: Bus },
             { id: "routes", label: `Routes (${routes.length})`, icon: MapPin },
             { id: "settlements", label: "Financial Ledger & Payouts", icon: CreditCard },
@@ -308,6 +323,75 @@ export default function SuperAdminPage() {
                 />
               </div>
             </div>
+
+            {/* Pending Operator Approvals Section */}
+            {pendingOperators.length > 0 && (
+              <div className="bg-amber-50/70 rounded-3xl border border-amber-200/80 p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-sm">
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-[#101B35]">
+                        Pending Operator Applications ({pendingOperators.length})
+                      </h3>
+                      <p className="text-xs text-amber-800">
+                        These bus companies have submitted KYC and are waiting for Super Admin approval before they can register buses and publish schedules.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  {pendingOperators.map((op) => (
+                    <div
+                      key={op._id}
+                      className="bg-white rounded-2xl p-5 border border-amber-200 shadow-sm flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h4 className="font-bold text-[#101B35] text-sm">{op.companyName}</h4>
+                            <p className="text-xs text-slate-500">
+                              {op.city}, {op.state} • Contact: {op.contactPerson} ({op.phone})
+                            </p>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">
+                            PENDING REVIEW
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl space-y-1 mb-4">
+                          <div>
+                            Email: <span className="font-semibold text-slate-800">{op.email}</span>
+                          </div>
+                          <div>
+                            GSTIN: <span className="font-semibold text-slate-800">{op.gstin || "In Verification"}</span> • PAN: <span className="font-semibold text-slate-800">{op.pan || "In Verification"}</span>
+                          </div>
+                          <div>
+                            Marketplace Split: <span className="font-bold text-[#FF7547]">10% Tripzo / 90% Operator Net</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
+                        <button
+                          onClick={() => handleStatusChange(op._id, "ACTIVE")}
+                          className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                        >
+                          <CheckCircle className="w-4 h-4" /> Approve & Activate
+                        </button>
+                        <button
+                          onClick={() => handleStatusChange(op._id, "REJECTED")}
+                          className="px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs transition-colors"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">

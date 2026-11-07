@@ -28,18 +28,22 @@ export default function BookingsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [cancelModalBooking, setCancelModalBooking] = useState<Booking | null>(null);
 
-  useEffect(() => {
-    loadBookings();
-  }, []);
-
   const loadBookings = async () => {
     const list = await bookingService.getBookings();
     setBookings(list);
     setRefreshing(false);
   };
 
+  useEffect(() => {
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadBookings();
+  }, []);
+
   const handleRefresh = () => {
     setRefreshing(true);
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadBookings();
   };
 

@@ -25,27 +25,37 @@ export default function LoginScreen() {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSendOtp = () => {
-    if (phone.trim().length < 10) {
+  const handleSendOtp = async () => {
+    if (phone.replace(/[^0-9]/g, '').length < 10) {
       showToast('Please enter a valid 10-digit mobile number', { type: 'error' });
       return;
     }
+    setLoading(true);
+    const res = await authService.sendOtp(phone);
+    setLoading(false);
+    if (!res.success) {
+      showToast(res.message, { type: 'error' });
+      return;
+    }
     setShowOtpModal(true);
-    setOtp('123456'); // Pre-fill or guide user for demo ease
-    showToast('Demo OTP generated: 123456', { type: 'info' });
+    setOtp('');
+    showToast(res.demoOtp ? `Demo mode: your OTP is ${res.demoOtp}` : 'OTP sent to your mobile', {
+      type: 'info',
+    });
   };
 
   const handleVerifyOtp = async () => {
-    if (otp !== '123456') {
-      showToast('Incorrect OTP! Please use demo code 123456', { type: 'error' });
+    if (otp.trim().length !== 6) {
+      showToast('Please enter the 6-digit OTP', { type: 'error' });
       return;
     }
 
     setLoading(true);
-    const res = await authService.login(phone, otp);
+    const res = await authService.verifyOtp(phone, otp.trim());
     setLoading(false);
 
     if (res.success) {
+      setShowOtpModal(false);
       showToast('Welcome to Tripzo!', { type: 'success' });
       router.replace('/(tabs)');
     } else {
@@ -54,9 +64,16 @@ export default function LoginScreen() {
   };
 
   const handleGuestLogin = async () => {
-    await authService.loginAsGuest();
-    showToast('Continuing as Guest Traveler', { type: 'info' });
-    router.replace('/(tabs)');
+    try {
+      setLoading(true);
+      await authService.loginAsGuest();
+      showToast('Continuing as Guest Traveler', { type: 'info' });
+      router.replace('/(tabs)');
+    } catch {
+      showToast('Could not reach Tripzo servers. Check your internet connection.', { type: 'error' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -121,7 +138,7 @@ export default function LoginScreen() {
 
               <TextInput
                 style={styles.otpInput}
-                placeholder="123456"
+                placeholder="••••••"
                 placeholderTextColor={Colors.textMuted}
                 keyboardType="number-pad"
                 maxLength={6}
@@ -134,14 +151,15 @@ export default function LoginScreen() {
 
           {/* Primary Action Button */}
           {!showOtpModal ? (
-            <TouchableOpacity style={styles.actionBtn} onPress={handleSendOtp} activeOpacity={0.8}>
-              <Text style={styles.actionBtnText}>Get OTP</Text>
+            <TouchableOpacity style={[styles.actionBtn, loading && { opacity: 0.6 }]} onPress={handleSendOtp} disabled={loading} activeOpacity={0.8}>
+              <Text style={styles.actionBtnText}>{loading ? 'Sending…' : 'Get OTP'}</Text>
               <Ionicons name="arrow-forward" size={18} color={Colors.white} />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: Colors.success }]}
+              style={[styles.actionBtn, { backgroundColor: Colors.success }, loading && { opacity: 0.6 }]}
               onPress={handleVerifyOtp}
+              disabled={loading}
               activeOpacity={0.8}
             >
               <Text style={styles.actionBtnText}>Verify & Login</Text>

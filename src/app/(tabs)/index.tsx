@@ -17,6 +17,7 @@ import { authService } from '../../services/authService';
 import { bookingService } from '../../services/bookingService';
 import { UserProfile, RouteSearch } from '../../types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CalendarModal } from '../../components/CalendarModal';
 
 const { width } = Dimensions.get('window');
 
@@ -27,13 +28,12 @@ export default function HomeScreen() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [fromCity, setFromCity] = useState('Bengaluru');
   const [toCity, setToCity] = useState('Hyderabad');
+  const todayIso = new Date().toISOString().split('T')[0];
+  const [journeyDate, setJourneyDate] = useState<string>(todayIso);
   const [selectedDateOption, setSelectedDateOption] = useState<'today' | 'tomorrow' | 'custom'>('today');
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [passengerCount, setPassengerCount] = useState(1);
   const [recentSearches, setRecentSearches] = useState<RouteSearch[]>([]);
-
-  useEffect(() => {
-    loadUserData();
-  }, []);
 
   const loadUserData = async () => {
     const profile = await authService.getProfile();
@@ -42,34 +42,55 @@ export default function HomeScreen() {
     setRecentSearches(recents);
   };
 
+  useEffect(() => {
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadUserData();
+  }, []);
+
   const swapCities = () => {
     const temp = fromCity;
     setFromCity(toCity);
     setToCity(temp);
   };
 
-  const getFormattedDate = (option: 'today' | 'tomorrow' | 'custom') => {
+  const getQuickDateIso = (type: 'today' | 'tomorrow') => {
     const d = new Date();
-    if (option === 'tomorrow') {
-      d.setDate(d.getDate() + 1);
-    } else if (option === 'custom') {
-      d.setDate(d.getDate() + 2);
-    }
-    return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+    if (type === 'tomorrow') d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
   };
 
-  const getIsoDate = (option: 'today' | 'tomorrow' | 'custom') => {
-    const d = new Date();
-    if (option === 'tomorrow') d.setDate(d.getDate() + 1);
-    if (option === 'custom') d.setDate(d.getDate() + 2);
-    return d.toISOString().split('T')[0];
+  const formatDisplayDate = (iso: string) => {
+    try {
+      const d = new Date(iso + 'T00:00:00');
+      return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+    } catch {
+      return iso;
+    }
+  };
+
+  const handleSelectQuickDate = (type: 'today' | 'tomorrow') => {
+    const dateStr = getQuickDateIso(type);
+    setJourneyDate(dateStr);
+    setSelectedDateOption(type);
+  };
+
+  const handleCalendarSelect = (dateStr: string) => {
+    setJourneyDate(dateStr);
+    if (dateStr === todayIso) {
+      setSelectedDateOption('today');
+    } else if (dateStr === getQuickDateIso('tomorrow')) {
+      setSelectedDateOption('tomorrow');
+    } else {
+      setSelectedDateOption('custom');
+    }
   };
 
   const handleSearchBuses = async () => {
     const searchData: RouteSearch = {
       fromCity,
       toCity,
-      date: getIsoDate(selectedDateOption),
+      date: journeyDate,
       passengerCount,
     };
     await bookingService.addRecentSearch(searchData);
@@ -79,7 +100,7 @@ export default function HomeScreen() {
       params: {
         from: fromCity,
         to: toCity,
-        date: getIsoDate(selectedDateOption),
+        date: journeyDate,
         passengers: passengerCount.toString(),
       },
     });
@@ -107,7 +128,7 @@ export default function HomeScreen() {
       params: {
         from: route.from,
         to: route.to,
-        date: getIsoDate('today'),
+        date: todayIso,
         passengers: '1',
       },
     });
@@ -225,29 +246,106 @@ export default function HomeScreen() {
 
           {/* Date Picker Row */}
           <View style={styles.dateSelectorContainer}>
-            <Text style={styles.sectionSmallLabel}>JOURNEY DATE</Text>
+            <View style={styles.dateHeaderRow}>
+              <Text style={styles.sectionSmallLabel}>JOURNEY DATE</Text>
+              <TouchableOpacity
+                style={styles.calendarLinkBtn}
+                onPress={() => setIsCalendarOpen(true)}
+              >
+                <Ionicons name="calendar" size={14} color={Colors.orange} />
+                <Text style={styles.calendarLinkText}>Open Calendar</Text>
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.dateButtonsRow}>
-              {[
-                { id: 'today', label: 'Today', date: getFormattedDate('today') },
-                { id: 'tomorrow', label: 'Tomorrow', date: getFormattedDate('tomorrow') },
-                { id: 'custom', label: 'Day After', date: getFormattedDate('custom') },
-              ].map((item) => {
-                const active = selectedDateOption === item.id;
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[styles.datePill, active && styles.datePillActive]}
-                    onPress={() => setSelectedDateOption(item.id as any)}
+              {/* Today */}
+              <TouchableOpacity
+                style={[
+                  styles.datePill,
+                  selectedDateOption === 'today' && styles.datePillActive,
+                ]}
+                onPress={() => handleSelectQuickDate('today')}
+              >
+                <Text
+                  style={[
+                    styles.datePillTitle,
+                    selectedDateOption === 'today' && styles.datePillTitleActive,
+                  ]}
+                >
+                  Today
+                </Text>
+                <Text
+                  style={[
+                    styles.datePillDate,
+                    selectedDateOption === 'today' && styles.datePillDateActive,
+                  ]}
+                >
+                  {formatDisplayDate(getQuickDateIso('today'))}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Tomorrow */}
+              <TouchableOpacity
+                style={[
+                  styles.datePill,
+                  selectedDateOption === 'tomorrow' && styles.datePillActive,
+                ]}
+                onPress={() => handleSelectQuickDate('tomorrow')}
+              >
+                <Text
+                  style={[
+                    styles.datePillTitle,
+                    selectedDateOption === 'tomorrow' && styles.datePillTitleActive,
+                  ]}
+                >
+                  Tomorrow
+                </Text>
+                <Text
+                  style={[
+                    styles.datePillDate,
+                    selectedDateOption === 'tomorrow' && styles.datePillDateActive,
+                  ]}
+                >
+                  {formatDisplayDate(getQuickDateIso('tomorrow'))}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Pick / Custom Date */}
+              <TouchableOpacity
+                style={[
+                  styles.datePill,
+                  styles.calendarDatePill,
+                  selectedDateOption === 'custom' && styles.datePillActive,
+                ]}
+                onPress={() => setIsCalendarOpen(true)}
+              >
+                <View style={styles.customPillHeader}>
+                  <Ionicons
+                    name="calendar-outline"
+                    size={13}
+                    color={selectedDateOption === 'custom' ? Colors.orangeHover : Colors.navy}
+                  />
+                  <Text
+                    style={[
+                      styles.datePillTitle,
+                      selectedDateOption === 'custom' && styles.datePillTitleActive,
+                    ]}
                   >
-                    <Text style={[styles.datePillTitle, active && styles.datePillTitleActive]}>
-                      {item.label}
-                    </Text>
-                    <Text style={[styles.datePillDate, active && styles.datePillDateActive]}>
-                      {item.date}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+                    Custom
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    styles.datePillDate,
+                    selectedDateOption === 'custom' && styles.datePillDateActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {selectedDateOption === 'custom'
+                    ? formatDisplayDate(journeyDate)
+                    : 'Pick Date'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -389,7 +487,7 @@ export default function HomeScreen() {
                     params: {
                       from: fromCity,
                       to: dest.city,
-                      date: getIsoDate('today'),
+                      date: todayIso,
                       passengers: '1',
                     },
                   });
@@ -414,6 +512,15 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
       </ScrollView>
+
+      {/* Interactive Journey Date Calendar Modal */}
+      <CalendarModal
+        visible={isCalendarOpen}
+        onClose={() => setIsCalendarOpen(false)}
+        selectedDate={journeyDate}
+        onSelectDate={handleCalendarSelect}
+        minDate={todayIso}
+      />
     </View>
   );
 }
@@ -548,6 +655,24 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   dateSelectorContainer: {},
+  dateHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  calendarLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  calendarLinkText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.orange,
+  },
   dateButtonsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -561,6 +686,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     alignItems: 'center',
+  },
+  calendarDatePill: {
+    borderStyle: 'dashed',
+  },
+  customPillHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
   },
   datePillActive: {
     backgroundColor: Colors.orangeLight,

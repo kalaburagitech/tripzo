@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 /**
@@ -6,7 +6,7 @@ import { v } from "convex/values";
  */
 
 // 1. Create Payment Order
-export const createPaymentOrder = mutation({
+export const createPaymentOrder = internalMutation({
   args: {
     bookingId: v.id("bookings"),
     amount: v.number(),
@@ -54,13 +54,13 @@ export const createPaymentOrder = mutation({
       paymentId,
       amount: args.amount,
       currency: args.currency,
-      keyId: "rzp_test_tripzo_demo",
+      keyId: process.env.RAZORPAY_KEY_ID || "",
     };
   },
 });
 
 // 2. Verify Payment (Signature verification & confirmation)
-export const verifyPayment = mutation({
+export const verifyPayment = internalMutation({
   args: {
     paymentId: v.id("payments"),
     gatewayPaymentId: v.string(),
@@ -125,7 +125,7 @@ export const verifyPayment = mutation({
 });
 
 // 3. Webhook Event Handler (Idempotent processing)
-export const processWebhookEvent = mutation({
+export const processWebhookEvent = internalMutation({
   args: {
     eventId: v.string(),
     source: v.union(v.literal("RAZORPAY_PAYMENT"), v.literal("RAZORPAY_ROUTE"), v.literal("SMS_GATEWAY")),

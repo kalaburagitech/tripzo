@@ -16,18 +16,22 @@ export default function NotificationsScreen() {
   const { showToast } = useToast();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
-  useEffect(() => {
-    loadNotifications();
-  }, []);
-
   const loadNotifications = async () => {
     const list = await notificationService.getNotifications();
     setNotifications(list);
   };
 
+  useEffect(() => {
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadNotifications();
+  }, []);
+
   const handleMarkAllRead = async () => {
     await notificationService.markAllAsRead();
     showToast('All notifications marked as read', { type: 'success' });
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadNotifications();
   };
 

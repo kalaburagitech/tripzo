@@ -2,23 +2,18 @@
   "expo": {
     "name": "Tripzo",
     "slug": "tripzo",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "tripzo",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#101B35"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kalaburagitech.tripzo"
     },
     "android": {
       "package": "com.kalaburagitech.tripzo",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundColor": "#101B35"
@@ -30,7 +25,16 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#101B35"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

@@ -36,10 +36,6 @@ export default function ProfileScreen() {
   const [newPassAge, setNewPassAge] = useState('');
   const [newPassGender, setNewPassGender] = useState<'male' | 'female'>('male');
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
-
   const loadProfile = async () => {
     const u = await authService.getProfile();
     setUser(u);
@@ -51,6 +47,12 @@ export default function ProfileScreen() {
     setSavedPassengers(passengers);
   };
 
+  useEffect(() => {
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadProfile();
+  }, []);
+
   const handleSaveProfile = async () => {
     if (!name.trim()) {
       showToast('Name cannot be empty', { type: 'error' });
@@ -59,6 +61,8 @@ export default function ProfileScreen() {
     await authService.updateProfile({ name: name.trim(), email: email.trim() });
     setEditModalVisible(false);
     showToast('Profile updated!', { type: 'success' });
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadProfile();
   };
 
@@ -76,12 +80,16 @@ export default function ProfileScreen() {
     setNewPassName('');
     setNewPassAge('');
     showToast('Passenger saved!', { type: 'success' });
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadProfile();
   };
 
   const handleDeletePassenger = async (id: string) => {
     await profileService.deleteSavedPassenger(id);
     showToast('Saved passenger removed', { type: 'info' });
+    // Fetch-on-mount: setState happens after async server load.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadProfile();
   };
 

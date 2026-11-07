@@ -4,9 +4,12 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastProvider } from '../components/Toast';
 import { Colors } from '../constants/theme';
+import { ConvexProvider } from 'convex/react';
+import { convexClient } from '../services/convexClient';
 
 export default function RootLayout() {
   return (
+    <ConvexProvider client={convexClient}>
     <SafeAreaProvider>
       <ToastProvider>
         <StatusBar style="light" />
@@ -36,5 +39,6 @@ export default function RootLayout() {
         </Stack>
       </ToastProvider>
     </SafeAreaProvider>
+    </ConvexProvider>
   );
 }

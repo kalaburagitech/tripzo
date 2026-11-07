@@ -1,6 +1,7 @@
-import { mutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 
-export const seedMarketplace = mutation({
+export const seedMarketplace = internalMutation({
   args: {},
   handler: async (ctx) => {
     // Check if already seeded
@@ -366,6 +367,9 @@ export const seedMarketplace = mutation({
       usageLimitPerUser: 3,
       createdAt: now,
     });
+
+    // Convert the seeded trips into daily schedules so inventory keeps rolling forward
+    await ctx.scheduler.runAfter(0, internal.schedules.backfillSchedulesFromTrips, {});
 
     return {
       success: true,

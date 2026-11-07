@@ -18,9 +18,11 @@ import { authService } from '../services/authService';
 import { Bus, Passenger } from '../types';
 import { Colors, Shadows, Radii } from '../constants/theme';
 import { useToast } from '../components/Toast';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function PassengerDetailsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const params = useLocalSearchParams<{
     busId: string;
@@ -31,7 +33,16 @@ export default function PassengerDetailsScreen() {
 
   const selectedSeatNumbers: string[] = params.seats ? JSON.parse(params.seats) : [];
   const [bus, setBus] = useState<Bus | null>(null);
-  const [passengers, setPassengers] = useState<Passenger[]>([]);
+  // One passenger entry per selected seat
+  const [passengers, setPassengers] = useState<Passenger[]>(() =>
+    selectedSeatNumbers.map((seatNum, idx) => ({
+      id: `p_${idx}`,
+      seatNumber: seatNum,
+      name: '',
+      age: 26,
+      gender: 'male',
+    }))
+  );
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [savedList, setSavedList] = useState<Passenger[]>([]);
@@ -41,28 +52,22 @@ export default function PassengerDetailsScreen() {
       busService.getBusById(params.busId).then(setBus);
     }
 
-    // Initialize passenger array for each seat
-    const initialPassengers: Passenger[] = selectedSeatNumbers.map((seatNum, idx) => ({
-      id: `p_${idx}`,
-      seatNumber: seatNum,
-      name: '',
-      age: 26,
-      gender: 'male',
-    }));
-    setPassengers(initialPassengers);
-
-    // Pre-populate contact info from user profile
+    // Pre-populate contact info + first passenger from user profile,
+    // without overwriting anything the user has already typed.
     authService.getProfile().then((u) => {
-      if (u) {
-        setPhone(u.phone.replace('+91 ', '').trim());
-        setEmail(u.email);
-        if (initialPassengers.length > 0 && !initialPassengers[0].name) {
-          initialPassengers[0].name = u.name;
-          if (u.age) initialPassengers[0].age = u.age;
-          if (u.gender) initialPassengers[0].gender = u.gender;
-          setPassengers([...initialPassengers]);
-        }
-      }
+      if (!u) return;
+      setPhone((cur) => cur || u.phone.replace('+91 ', '').trim());
+      setEmail((cur) => cur || u.email);
+      setPassengers((prev) => {
+        if (prev.length === 0 || prev[0].name) return prev;
+        const first = {
+          ...prev[0],
+          name: u.name,
+          age: u.age || prev[0].age,
+          gender: u.gender || prev[0].gender,
+        };
+        return [first, ...prev.slice(1)];
+      });
     });
 
     profileService.getSavedPassengers().then(setSavedList);
@@ -262,7 +267,7 @@ export default function PassengerDetailsScreen() {
       </ScrollView>
 
       {/* Bottom Sticky Action Bar */}
-      <View style={styles.bottomBar}>
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.fareInfo}>
           <Text style={styles.totalLabel}>Total Payable</Text>
           <Text style={styles.totalValue}>₹{params.totalFare}</Text>
