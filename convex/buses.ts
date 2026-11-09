@@ -24,7 +24,7 @@ const categoryV = v.union(v.literal("sleeper"), v.literal("seater"), v.literal("
 
 export const createBus = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     operatorId: v.optional(v.id("operators")),
     busNumber: v.string(),
     name: v.string(),
@@ -74,7 +74,7 @@ export const createBus = mutation({
 
 export const updateBusStatus = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     busId: v.id("buses"),
     status: v.union(v.literal("ACTIVE"), v.literal("MAINTENANCE"), v.literal("INACTIVE")),
   },
@@ -88,7 +88,7 @@ export const updateBusStatus = mutation({
 });
 
 export const listOperatorBuses = query({
-  args: { token: v.string(), operatorId: v.optional(v.id("operators")) },
+  args: { token: v.optional(v.string()), operatorId: v.optional(v.id("operators")) },
   handler: async (ctx, args) => {
     const { operator } = await requireOperatorAccess(ctx, args.token, args.operatorId);
     return await ctx.db
@@ -99,7 +99,7 @@ export const listOperatorBuses = query({
 });
 
 export const listAllBuses = query({
-  args: { token: v.string() },
+  args: { token: v.optional(v.string()) },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.token);
     const buses = await ctx.db.query("buses").collect();
@@ -119,7 +119,7 @@ const stopInputV = v.object({
 
 export const createRouteWithStops = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     operatorId: v.optional(v.id("operators")),
     fromCity: v.string(),
     toCity: v.string(),
@@ -177,7 +177,7 @@ export const createRouteWithStops = mutation({
 });
 
 export const listOperatorRoutes = query({
-  args: { token: v.string(), operatorId: v.optional(v.id("operators")) },
+  args: { token: v.optional(v.string()), operatorId: v.optional(v.id("operators")) },
   handler: async (ctx, args) => {
     const { operator } = await requireOperatorAccess(ctx, args.token, args.operatorId);
     const routes = await ctx.db
@@ -197,7 +197,7 @@ export const listOperatorRoutes = query({
 });
 
 export const listRoutes = query({
-  args: { token: v.string() },
+  args: { token: v.optional(v.string()) },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.token);
     return await ctx.db.query("routes").collect();
@@ -226,7 +226,7 @@ export const listServedCities = query({
 /** One-off trip on a specific date (recurring service lives in schedules.ts). */
 export const scheduleTrip = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     busId: v.id("buses"),
     routeId: v.id("routes"),
     journeyDate: v.string(),
@@ -264,7 +264,7 @@ export const scheduleTrip = mutation({
 
 export const listOperatorTrips = query({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     operatorId: v.optional(v.id("operators")),
     fromDate: v.optional(v.string()),
     days: v.optional(v.number()),
@@ -304,7 +304,7 @@ const STATUS_MESSAGES: Record<string, (t: Doc<"trips">) => [string, string]> = {
 
 export const updateTripStatus = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     tripId: v.id("trips"),
     liveStatus: v.union(
       v.literal("SCHEDULED"),
@@ -354,7 +354,7 @@ export const updateTripStatus = mutation({
 /** Conductor / driver location ping (from the operator portal on a phone). */
 export const updateTripLocation = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     tripId: v.id("trips"),
     latitude: v.number(),
     longitude: v.number(),

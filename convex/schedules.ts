@@ -16,7 +16,7 @@ const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 export const createSchedule = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     busId: v.id("buses"),
     routeId: v.id("routes"),
     departureTime: v.string(),
@@ -57,7 +57,7 @@ export const createSchedule = mutation({
 });
 
 export const setScheduleActive = mutation({
-  args: { token: v.string(), scheduleId: v.id("recurringSchedules"), isActive: v.boolean() },
+  args: { token: v.optional(v.string()), scheduleId: v.id("recurringSchedules"), isActive: v.boolean() },
   handler: async (ctx, args) => {
     const schedule = await ctx.db.get(args.scheduleId);
     if (!schedule) throw new Error("Schedule not found");
@@ -71,7 +71,7 @@ export const setScheduleActive = mutation({
 });
 
 export const updateScheduleFare = mutation({
-  args: { token: v.string(), scheduleId: v.id("recurringSchedules"), baseFare: v.number() },
+  args: { token: v.optional(v.string()), scheduleId: v.id("recurringSchedules"), baseFare: v.number() },
   handler: async (ctx, args) => {
     const schedule = await ctx.db.get(args.scheduleId);
     if (!schedule) throw new Error("Schedule not found");
@@ -83,7 +83,7 @@ export const updateScheduleFare = mutation({
 });
 
 export const listSchedules = query({
-  args: { token: v.string(), operatorId: v.optional(v.id("operators")) },
+  args: { token: v.optional(v.string()), operatorId: v.optional(v.id("operators")) },
   handler: async (ctx, args) => {
     const { operator } = await requireOperatorAccess(ctx, args.token, args.operatorId);
     const schedules = await ctx.db

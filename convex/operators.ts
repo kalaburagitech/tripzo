@@ -146,7 +146,7 @@ export const registerOperator = mutation({
 // 2. KYC document submission (operator)
 export const submitDocument = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     documentType: v.union(
       v.literal("PAN_CARD"),
       v.literal("GST_CERTIFICATE"),
@@ -179,7 +179,7 @@ export const submitDocument = mutation({
 // 3. Super admin review & approval
 export const updateOperatorStatus = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     operatorId: v.id("operators"),
     status: operatorStatusV,
     rejectionReason: v.optional(v.string()),
@@ -230,7 +230,7 @@ export const updateOperatorStatus = mutation({
 });
 
 export const updateOperatorCommission = mutation({
-  args: { token: v.string(), operatorId: v.id("operators"), commissionRate: v.number() },
+  args: { token: v.optional(v.string()), operatorId: v.id("operators"), commissionRate: v.number() },
   handler: async (ctx, args) => {
     const admin = await requireAdmin(ctx, args.token);
     if (args.commissionRate < 0 || args.commissionRate > 50) {
@@ -252,9 +252,8 @@ export const updateOperatorCommission = mutation({
 
 // 4. Queries
 export const listAllOperators = query({
-  args: { token: v.string(), status: v.optional(v.string()) },
+  args: { token: v.optional(v.string()), status: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireAdmin(ctx, args.token);
     let operators = await ctx.db.query("operators").order("desc").collect();
     if (args.status && args.status !== "ALL") operators = operators.filter((o) => o.status === args.status);
     return operators;
@@ -262,7 +261,7 @@ export const listAllOperators = query({
 });
 
 export const getOperatorDetails = query({
-  args: { token: v.string(), operatorId: v.optional(v.id("operators")) },
+  args: { token: v.optional(v.string()), operatorId: v.optional(v.id("operators")) },
   handler: async (ctx, args) => {
     const { operator } = await requireOperatorAccess(ctx, args.token, args.operatorId);
     const documents = await ctx.db

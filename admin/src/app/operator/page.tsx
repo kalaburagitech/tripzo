@@ -183,7 +183,13 @@ export default function OperatorPortalPage() {
 
       {/* Main Container */}
       <div className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
-        {currentOp && (
+        {!currentOp ? (
+          <div className="bg-white rounded-3xl p-12 border border-slate-200 shadow-sm text-center flex flex-col items-center justify-center min-h-[320px]">
+            <div className="w-10 h-10 rounded-full border-4 border-[#FF7547] border-t-transparent animate-spin mb-4" />
+            <h3 className="text-lg font-bold text-[#101B35]">Loading Fleet & Operator Profile...</h3>
+            <p className="text-xs text-slate-500 mt-1">Connecting to Tripzo multi-operator dispatch services</p>
+          </div>
+        ) : (
           <div className="space-y-8">
             {/* Operator Company Hero Card */}
             <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">

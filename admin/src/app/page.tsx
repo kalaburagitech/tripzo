@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 export default function HomePage() {
-  const metrics = useQuery((anyApi as any).reports.getSuperAdminMetrics) as any;
+  const metrics = useQuery((anyApi as any).reports.getSuperAdminMetrics, {}) as any;
 
   return (
     <div className="min-h-screen bg-[#F5F7FB]">

@@ -91,7 +91,7 @@ export const getUserTickets = query({
 });
 
 export const listOpenTickets = query({
-  args: { token: v.string() },
+  args: { token: v.optional(v.string()) },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.token, ["SUPER_ADMIN", "BOOKING_SUPPORT"]);
     const open = await ctx.db
@@ -110,7 +110,7 @@ export const listOpenTickets = query({
 
 export const setTicketStatus = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     ticketId: v.id("supportTickets"),
     status: v.union(v.literal("OPEN"), v.literal("IN_PROGRESS"), v.literal("RESOLVED"), v.literal("CLOSED")),
   },

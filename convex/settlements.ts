@@ -9,7 +9,7 @@ import { requireAdmin, requireOperatorAccess } from "./lib/auth";
 // 1. Process Operator Payout (Razorpay Route Transfer)
 export const processSettlementTransfer = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     settlementId: v.id("settlements"),
   },
   handler: async (ctx, args) => {
@@ -62,7 +62,7 @@ export const processSettlementTransfer = mutation({
 
 // 2. Query Operator Settlements
 export const getOperatorSettlements = query({
-  args: { token: v.string(), operatorId: v.optional(v.id("operators")) },
+  args: { token: v.optional(v.string()), operatorId: v.optional(v.id("operators")) },
   handler: async (ctx, args) => {
     const { operator } = await requireOperatorAccess(ctx, args.token, args.operatorId);
     const settlements = await ctx.db
@@ -87,7 +87,7 @@ export const getOperatorSettlements = query({
 
 // 3. Query Super Admin Financial Ledger
 export const getFinancialLedger = query({
-  args: { token: v.string(), limit: v.optional(v.number()) },
+  args: { token: v.optional(v.string()), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.token);
     const limit = args.limit || 50;
@@ -101,7 +101,7 @@ export const getFinancialLedger = query({
 });
 
 export const listPendingSettlements = query({
-  args: { token: v.string() },
+  args: { token: v.optional(v.string()) },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.token);
     const pending = await ctx.db

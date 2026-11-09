@@ -54,7 +54,7 @@ export const listActiveCoupons = query({
 });
 
 export const listAllCoupons = query({
-  args: { token: v.string() },
+  args: { token: v.optional(v.string()) },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.token);
     return await ctx.db.query("coupons").order("desc").collect();
@@ -63,7 +63,7 @@ export const listAllCoupons = query({
 
 export const createCoupon = mutation({
   args: {
-    token: v.string(),
+    token: v.optional(v.string()),
     code: v.string(),
     title: v.string(),
     description: v.string(),
@@ -99,7 +99,7 @@ export const createCoupon = mutation({
 });
 
 export const setCouponActive = mutation({
-  args: { token: v.string(), couponId: v.id("coupons"), isActive: v.boolean() },
+  args: { token: v.optional(v.string()), couponId: v.id("coupons"), isActive: v.boolean() },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.token);
     await ctx.db.patch(args.couponId, { isActive: args.isActive });

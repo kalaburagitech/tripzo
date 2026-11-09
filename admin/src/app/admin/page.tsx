@@ -28,7 +28,7 @@ export default function SuperAdminPage() {
   const [activeTab, setActiveTab] = useState<"overview" | "operators" | "buses" | "routes" | "bookings" | "settlements" | "coupons">("overview");
 
   // Convex Queries
-  const metrics = useQuery((anyApi as any).reports.getSuperAdminMetrics) as any;
+  const metrics = useQuery((anyApi as any).reports.getSuperAdminMetrics, {}) as any;
   const operators = useQuery((anyApi as any).operators.listAllOperators, {}) as any[] || [];
   const buses = useQuery((anyApi as any).buses.listAllBuses, {}) as any[] || [];
   const routes = useQuery((anyApi as any).buses.listRoutes, {}) as any[] || [];

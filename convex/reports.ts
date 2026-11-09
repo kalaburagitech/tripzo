@@ -9,7 +9,7 @@ import { istDateString } from "./lib/time";
 
 // 1. Super Admin Executive Overview
 export const getSuperAdminMetrics = query({
-  args: { token: v.string() },
+  args: { token: v.optional(v.string()) },
   handler: async (ctx, args) => {
     await requireAdmin(ctx, args.token);
     const bookings = await ctx.db.query("bookings").collect();
@@ -66,7 +66,7 @@ export const getSuperAdminMetrics = query({
 
 // 2. Operator Business Overview
 export const getOperatorMetrics = query({
-  args: { token: v.string(), operatorId: v.optional(v.id("operators")) },
+  args: { token: v.optional(v.string()), operatorId: v.optional(v.id("operators")) },
   handler: async (ctx, args) => {
     const { operator } = await requireOperatorAccess(ctx, args.token, args.operatorId);
 
